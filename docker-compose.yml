@@ -1,0 +1,80 @@
+# Copyright (c) Facebook, Inc. and its affiliates.
+
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
+
+version: '3.8'
+
+volumes:
+  whatsapp_biz_media:
+  whatsapp_biz_postgres_data:
+
+networks:
+  whatsapp_biz_network:
+    driver: bridge
+
+services:
+  whatsapp_biz_postgres:
+    container_name: whatsapp_biz_postgres
+    image: postgres:13.8-alpine
+    command: "-p ${WA_DB_PORT} -N 500"
+    env_file:
+      - .env
+    environment:
+      POSTGRES_PASSWORD: ${WA_DB_PASSWORD}
+      POSTGRES_USER: ${WA_DB_USERNAME}
+    ports:
+      - "${WA_DB_EXPOSED_PORT}:${WA_DB_PORT}"
+    cap_drop:
+      - MKNOD
+    volumes:
+     - whatsapp_biz_postgres_data:/var/lib/postgresql/data
+    networks:
+      - whatsapp_biz_network
+
+  whatsapp_biz_coreapp:
+    container_name: whatsapp_biz_coreapp
+    image: docker.whatsapp.biz/coreapp:v${WA_API_VERSION:?Run docker-compose with env var WA_API_VERSION (ex. WA_API_VERSION=2.41.2 docker-compose <command> <options>)}
+    command: ["/opt/whatsapp/bin/wait_on_postgres.sh", "/opt/whatsapp/bin/launch_within_docker.sh"]
+    env_file:
+      - .env
+    environment:
+      # This is the version of the docker templates being used to run WhatsApp Business API
+      WA_RUNNING_ENV_VERSION: v2.2.3
+      ORCHESTRATION: DOCKER-COMPOSE
+    depends_on:
+      - whatsapp_biz_postgres
+    links:
+      - whatsapp_biz_postgres
+    cap_drop:
+      - MKNOD
+    volumes:
+     - whatsapp_biz_media:/usr/local/wamedia
+    networks:
+      - whatsapp_biz_network
+
+  whatsapp_biz_webapp:
+    container_name: whatsapp_biz_webapp
+    image: docker.whatsapp.biz/web:v${WA_API_VERSION:?Run docker-compose with env var WA_API_VERSION (ex. WA_API_VERSION=2.41.2 docker-compose <command> <options>)}
+    command: ["/opt/whatsapp/bin/wait_on_postgres.sh", "/opt/whatsapp/bin/launch_within_docker.sh"]
+    ports:
+     - "${WA_WEBAPP_PORT}:443"
+    env_file:
+      - .env
+    environment:
+      WACORE_HOSTNAME: whatsapp_biz_coreapp
+      # This is the version of the docker templates being used to run WhatsApp Business API
+      WA_RUNNING_ENV_VERSION: v2.2.3
+      ORCHESTRATION: DOCKER-COMPOSE
+    depends_on:
+      - "whatsapp_biz_postgres"
+      - "whatsapp_biz_coreapp"
+    links:
+      - whatsapp_biz_postgres
+      - whatsapp_biz_coreapp
+    cap_drop:
+      - MKNOD
+    volumes:
+     - whatsapp_biz_media:/usr/local/wamedia
+    networks:
+      - whatsapp_biz_network
